@@ -1,0 +1,24 @@
+services:
+  mariadb:
+    image: mariadb:11.8
+    container_name: openworld_mariadb
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: openworld_game
+      MYSQL_USER: gameuser
+      MYSQL_PASSWORD: STRONG_PASSWORD
+    ports:
+      - "3306:3306"
+    volumes:
+      - mariadb_data:/var/lib/mysql
+      - ./server/prisma/schema.sql:/docker-entrypoint-initdb.d/01_init.sql
+    command: [
+      "--character-set-server=utf8mb4",
+      "--collation-server=utf8mb4_unicode_ci",
+      "--max-connections=250"
+    ]
+
+volumes:
+  mariadb_data:
+

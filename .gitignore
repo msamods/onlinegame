@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+package-lock.json.backup
+
+# Production and build outputs
+dist/
+build/
+.tsbuildinfo
+
+# Environment variables and local configs
+.env
+.env.local
+.env.*.local
+!.env.example
+server/.env
+
+# Logs and debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Database data directories
+mariadb_data/
+mysql_data/
+*.sqlite
+*.sqlite3
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# IDE and Editor
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

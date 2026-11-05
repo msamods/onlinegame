@@ -1,0 +1,122 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String            @id @default(uuid()) @db.VarChar(36)
+  username       String            @unique @db.VarChar(50)
+  password_hash  String            @db.VarChar(255)
+  created_at     DateTime          @default(now())
+  last_login     DateTime?
+  account_status String            @default("active") @db.VarChar(20)
+  
+  profile        PlayerProfile?
+  statistics     PlayerStatistics?
+  inventory      PlayerInventory[]
+  match_history  MatchHistory[]
+  created_rooms  GameRoom[]        @relation("RoomCreator")
+  sessions       PlayerSession[]
+
+  @@map("users")
+}
+
+model PlayerProfile {
+  id                 String   @id @default(uuid()) @db.VarChar(36)
+  user_id            String   @unique @db.VarChar(36)
+  selected_character String   @default("ranger") @db.VarChar(50)
+  character_color    String   @default("#2e7d32") @db.VarChar(20)
+  level              Int      @default(1)
+  experience         Int      @default(0)
+  coins              Int      @default(100)
+
+  user               User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("player_profiles")
+}
+
+model PlayerStatistics {
+  id             String   @id @default(uuid()) @db.VarChar(36)
+  user_id        String   @unique @db.VarChar(36)
+  kills          Int      @default(0)
+  deaths         Int      @default(0)
+  matches_played Int      @default(0)
+  matches_won    Int      @default(0)
+
+  user           User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("player_statistics")
+}
+
+model PlayerInventory {
+  id        String   @id @default(uuid()) @db.VarChar(36)
+  user_id   String   @db.VarChar(36)
+  item_id   String   @db.VarChar(50)
+  quantity  Int      @default(1)
+
+  user      User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, item_id])
+  @@map("player_inventory")
+}
+
+model MatchHistory {
+  id         String   @id @default(uuid()) @db.VarChar(36)
+  user_id    String   @db.VarChar(36)
+  room_id    String   @db.VarChar(50)
+  kills      Int      @default(0)
+  deaths     Int      @default(0)
+  result     String   @db.VarChar(20)
+  created_at DateTime @default(now())
+
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@map("match_history")
+}
+
+model GameRoom {
+  id              String   @id @default(uuid()) @db.VarChar(36)
+  room_code       String   @unique @db.VarChar(20)
+  room_name       String   @db.VarChar(100)
+  room_type       String   @default("deathmatch") @db.VarChar(30)
+  map_name        String   @default("Forest Island") @db.VarChar(50)
+  maximum_players Int      @default(16)
+  created_by      String   @db.VarChar(36)
+  created_at      DateTime @default(now())
+
+  creator         User     @relation("RoomCreator", fields: [created_by], references: [id], onDelete: Cascade)
+
+  @@index([room_code])
+  @@map("game_rooms")
+}
+
+model Friend {
+  id             String   @id @default(uuid()) @db.VarChar(36)
+  user_id        String   @db.VarChar(36)
+  friend_user_id String   @db.VarChar(36)
+  status         String   @default("accepted") @db.VarChar(20)
+  created_at     DateTime @default(now())
+
+  @@unique([user_id, friend_user_id])
+  @@index([user_id])
+  @@map("friends")
+}
+
+model PlayerSession {
+  id                 String   @id @default(uuid()) @db.VarChar(36)
+  user_id            String   @db.VarChar(36)
+  session_token_hash String   @db.VarChar(255)
+  created_at         DateTime @default(now())
+  expires_at         DateTime
+
+  user               User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([session_token_hash])
+  @@map("player_sessions")
+}
+
