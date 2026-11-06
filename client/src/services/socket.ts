@@ -7,11 +7,14 @@ export class SocketService {
   public activeRoom: Room | null = null;
 
   private constructor() {
-    // Determine server websocket URL
+    // Determine server websocket URL dynamically
+    const isLocalDev = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') && window.location.port === '3000';
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.hostname || 'localhost';
-    const port = '3001';
-    const endpoint = `${protocol}//${host}:${port}`;
+    const endpoint = isLocalDev
+      ? `${protocol}//${window.location.hostname}:3001`
+      : `${protocol}//${window.location.host}`;
+    
+    console.log(`[SocketService] Connecting Colyseus WebSocket to: ${endpoint}`);
     this.client = new Client(endpoint);
   }
 
