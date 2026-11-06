@@ -518,6 +518,9 @@ class GameManager {
       }
     }
 
+    (window as any).__game = this.phaserGame;
+    (window as any).__room = room;
+
     // Regain focus on canvas
     setTimeout(() => {
       window.focus();
