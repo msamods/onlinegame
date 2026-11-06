@@ -352,6 +352,90 @@ export class SpriteGenerator {
       ctx.fill();
       tm.addCanvas('blood_particle', c);
     }
+
+    // Spent Brass Shell Casing (8x4)
+    if (!tm.exists('casing_brass')) {
+      const c = document.createElement('canvas');
+      c.width = 8;
+      c.height = 4;
+      const ctx = c.getContext('2d')!;
+      ctx.fillStyle = '#ffd54f';
+      ctx.fillRect(0, 0, 7, 4);
+      ctx.fillStyle = '#ffb300';
+      ctx.fillRect(6, 0, 2, 4);
+      ctx.fillStyle = '#5d4037';
+      ctx.fillRect(0, 1, 2, 2);
+      tm.addCanvas('casing_brass', c);
+    }
+
+    // Dynamic Muzzle Light Glow (128x128)
+    if (!tm.exists('muzzle_light')) {
+      const c = document.createElement('canvas');
+      c.width = 128;
+      c.height = 128;
+      const ctx = c.getContext('2d')!;
+      const grad = ctx.createRadialGradient(64, 64, 4, 64, 64, 62);
+      grad.addColorStop(0, 'rgba(255, 245, 157, 0.9)');
+      grad.addColorStop(0.25, 'rgba(255, 179, 0, 0.45)');
+      grad.addColorStop(0.65, 'rgba(255, 109, 0, 0.15)');
+      grad.addColorStop(1, 'rgba(255, 87, 34, 0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(64, 64, 62, 0, Math.PI * 2);
+      ctx.fill();
+      tm.addCanvas('muzzle_light', c);
+    }
+
+    // Gun Smoke & Jetpack Smoke (16x16)
+    if (!tm.exists('smoke_puff')) {
+      const c = document.createElement('canvas');
+      c.width = 16;
+      c.height = 16;
+      const ctx = c.getContext('2d')!;
+      const grad = ctx.createRadialGradient(8, 8, 2, 8, 8, 8);
+      grad.addColorStop(0, 'rgba(224, 224, 224, 0.7)');
+      grad.addColorStop(0.5, 'rgba(189, 189, 189, 0.35)');
+      grad.addColorStop(1, 'rgba(158, 158, 158, 0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(8, 8, 8, 0, Math.PI * 2);
+      ctx.fill();
+      tm.addCanvas('smoke_puff', c);
+    }
+
+    // Jetpack Thruster Flame (12x20)
+    if (!tm.exists('thruster_flame')) {
+      const c = document.createElement('canvas');
+      c.width = 12;
+      c.height = 20;
+      const ctx = c.getContext('2d')!;
+      const grad = ctx.createLinearGradient(0, 0, 0, 20);
+      grad.addColorStop(0, '#ffffff');
+      grad.addColorStop(0.3, '#00e5ff');
+      grad.addColorStop(0.7, '#0288d1');
+      grad.addColorStop(1, 'rgba(2, 136, 209, 0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.moveTo(1, 0);
+      ctx.lineTo(11, 0);
+      ctx.lineTo(6, 20);
+      ctx.closePath();
+      ctx.fill();
+      tm.addCanvas('thruster_flame', c);
+    }
+
+    // Footstep Dust (8x8)
+    if (!tm.exists('footstep_dust')) {
+      const c = document.createElement('canvas');
+      c.width = 8;
+      c.height = 8;
+      const ctx = c.getContext('2d')!;
+      ctx.fillStyle = 'rgba(161, 136, 127, 0.6)';
+      ctx.beginPath();
+      ctx.arc(4, 4, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+      tm.addCanvas('footstep_dust', c);
+    }
   }
 
   private static generateEnvironmentTextures(tm: Phaser.Textures.TextureManager): void {

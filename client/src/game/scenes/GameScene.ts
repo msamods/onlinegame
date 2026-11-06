@@ -15,12 +15,16 @@ interface PlayerVisual {
   container: Phaser.GameObjects.Container;
   bodySprite: Phaser.GameObjects.Sprite;
   weaponSprite: Phaser.GameObjects.Sprite;
+  thrusterSprite: Phaser.GameObjects.Sprite;
   nameText: Phaser.GameObjects.Text;
   healthBarBg: Phaser.GameObjects.Rectangle;
   healthBarFill: Phaser.GameObjects.Rectangle;
   targetX: number;
   targetY: number;
   targetAngle: number;
+  walkCycle: number;
+  lastDustTime: number;
+  lastSmokeTime: number;
 }
 
 export class GameScene extends Phaser.Scene {
@@ -36,16 +40,27 @@ export class GameScene extends Phaser.Scene {
   private bulletSprites = new Map<string, Phaser.GameObjects.Sprite>();
   private bloodParticles!: Phaser.GameObjects.Particles.ParticleEmitter;
   private sparkParticles!: Phaser.GameObjects.Particles.ParticleEmitter;
+  private dustParticles!: Phaser.GameObjects.Particles.ParticleEmitter;
+  private smokeParticles!: Phaser.GameObjects.Particles.ParticleEmitter;
 
   // Desktop Controls
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private keyA!: Phaser.Input.Keyboard.Key;
   private keyD!: Phaser.Input.Keyboard.Key;
   private keyW!: Phaser.Input.Keyboard.Key;
+  private keyS!: Phaser.Input.Keyboard.Key;
   private keyR!: Phaser.Input.Keyboard.Key;
   private keyQ!: Phaser.Input.Keyboard.Key;
+  private keyE!: Phaser.Input.Keyboard.Key;
+  private key1!: Phaser.Input.Keyboard.Key;
+  private key2!: Phaser.Input.Keyboard.Key;
+  private key3!: Phaser.Input.Keyboard.Key;
+  private key4!: Phaser.Input.Keyboard.Key;
+  private key5!: Phaser.Input.Keyboard.Key;
 
-  // Input timing
+  // Mouse & Shooting state
+  private isPointerShooting: boolean = false;
+  private lastShotTime: number = 0;
   private lastInputSend: number = 0;
   private lastPingTime: number = 0;
 
@@ -61,6 +76,10 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.localSessionId = this.room.sessionId;
+
+    // Prevent default context menu on right click so right click shoots cleanly!
+    this.input.mouse?.disableContextMenu();
+    window.addEventListener('contextmenu', (e) => e.preventDefault());
 
     // Start HUD overlay scene
     this.scene.launch('HUDScene');
@@ -174,6 +193,27 @@ export class GameScene extends Phaser.Scene {
       emitting: false
     });
     this.sparkParticles.setDepth(30);
+
+    // Footstep dust particles
+    this.dustParticles = this.add.particles(0, 0, 'footstep_dust', {
+      speed: { min: 10, max: 35 },
+      angle: { min: 180, max: 360 },
+      scale: { start: 1.0, end: 0.1 },
+      alpha: { start: 0.6, end: 0 },
+      lifespan: 300,
+      emitting: false
+    });
+    this.dustParticles.setDepth(12);
+
+    // Smoke particles for barrel and jetpack
+    this.smokeParticles = this.add.particles(0, 0, 'smoke_puff', {
+      speed: { min: 15, max: 40 },
+      scale: { start: 0.8, end: 1.8 },
+      alpha: { start: 0.6, end: 0 },
+      lifespan: 400,
+      emitting: false
+    });
+    this.smokeParticles.setDepth(22);
   }
 
   private setupInputs(): void {
@@ -183,13 +223,30 @@ export class GameScene extends Phaser.Scene {
     this.keyA = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A);
     this.keyD = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D);
     this.keyW = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W);
+    this.keyS = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S);
     this.keyR = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
     this.keyQ = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.Q);
+    this.keyE = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E);
 
-    // Left click to shoot
+    // Number keys 1-5 for direct weapon selection
+    this.key1 = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ONE);
+    this.key2 = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.TWO);
+    this.key3 = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.THREE);
+    this.key4 = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.FOUR);
+    this.key5 = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.FIVE);
+
+    // Mouse Listeners: Both Left Click AND Right Click trigger shooting!
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      if (pointer.leftButtonDown() && this.room) {
-        this.fireCurrentWeapon();
+      if (pointer.leftButtonDown() || pointer.rightButtonDown()) {
+        this.isPointerShooting = true;
+        this.tryFireWeapon(this.time.now);
+      }
+    });
+
+    this.input.on('pointerup', () => {
+      const p = this.input.activePointer;
+      if (!p.leftButtonDown() && !p.rightButtonDown()) {
+        this.isPointerShooting = false;
       }
     });
 
@@ -201,24 +258,59 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
-    // Q to switch weapon
+    // Q to switch to previous weapon
     this.keyQ.on('down', () => {
-      this.cycleWeapon();
+      this.cycleWeapon(-1);
     });
+
+    // E to switch to next weapon
+    this.keyE.on('down', () => {
+      this.cycleWeapon(1);
+    });
+
+    // Direct number weapon select keys
+    this.key1.on('down', () => this.selectWeapon(WeaponType.PISTOL));
+    this.key2.on('down', () => this.selectWeapon(WeaponType.ASSAULT_RIFLE));
+    this.key3.on('down', () => this.selectWeapon(WeaponType.SHOTGUN));
+    this.key4.on('down', () => this.selectWeapon(WeaponType.SNIPER_RIFLE));
+    this.key5.on('down', () => this.selectWeapon(WeaponType.GRENADE_LAUNCHER));
+  }
+
+  private tryFireWeapon(time: number): void {
+    if (!this.room || !this.localPlayerVisual) return;
+    const localState = this.room.state.players.get(this.localSessionId);
+    if (!localState || localState.isDead || localState.isReloading || localState.ammo <= 0) return;
+
+    const config = WEAPON_CONFIGS[localState.currentWeapon as WeaponType] || WEAPON_CONFIGS[WeaponType.PISTOL];
+    if (time - this.lastShotTime < config.fireRateMs) return;
+
+    this.lastShotTime = time;
+    this.fireCurrentWeapon();
   }
 
   private fireCurrentWeapon(): void {
     if (!this.room || !this.localPlayerVisual) return;
     const worldPoint = this.cameras.main.getWorldPoint(this.input.x, this.input.y);
-    const angle = Math.atan2(
-      worldPoint.y - this.localPlayerVisual.container.y,
-      worldPoint.x - this.localPlayerVisual.container.x
-    );
+    const angle = this.touchControls?.state.isShooting && this.touchControls?.state.aimAngle !== 0
+      ? this.touchControls.state.aimAngle
+      : Math.atan2(
+          worldPoint.y - this.localPlayerVisual.container.y,
+          worldPoint.x - this.localPlayerVisual.container.x
+        );
 
     this.room.send(NETWORK_EVENTS.PLAYER_FIRE, { aimAngle: angle });
   }
 
-  private cycleWeapon(): void {
+  private selectWeapon(weapon: WeaponType): void {
+    if (!this.room) return;
+    const localState = this.room.state.players.get(this.localSessionId);
+    if (localState && localState.currentWeapon !== weapon) {
+      this.room.send(NETWORK_EVENTS.PLAYER_SWITCH_WEAPON, { weapon });
+      sound.playReload();
+    }
+  }
+
+  private cycleWeapon(direction: number = 1): void {
     if (!this.room) return;
     const weapons = [
       WeaponType.PISTOL,
@@ -232,7 +324,7 @@ export class GameScene extends Phaser.Scene {
     if (!currentLocal) return;
 
     const currentIdx = weapons.indexOf(currentLocal.currentWeapon as WeaponType);
-    const nextIdx = (currentIdx + 1) % weapons.length;
+    const nextIdx = (currentIdx + direction + weapons.length) % weapons.length;
     const nextWeapon = weapons[nextIdx];
 
     this.room.send(NETWORK_EVENTS.PLAYER_SWITCH_WEAPON, { weapon: nextWeapon });
@@ -272,25 +364,101 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
-    // Broadcast Handlers
+    // Broadcast Handlers: Realistic Gun recoil, dynamic light halo, muzzle smoke & brass shell ejection!
     this.room.onMessage('player_fired', (data: any) => {
       sound.playGunshot(data.weapon);
 
-      // Create Muzzle Flash at barrel
-      const flash = this.add.sprite(
-        data.x + Math.cos(data.angle) * 32,
-        data.y + Math.sin(data.angle) * 32,
-        'muzzle_flash'
-      );
-      flash.setDepth(25);
+      const shooter = data.playerId === this.localSessionId
+        ? this.localPlayerVisual
+        : this.remotePlayers.get(data.playerId);
+
+      // 1. Realistic Gun Recoil Kick
+      if (shooter) {
+        const recoilKick = data.weapon === 'sniper_rifle' ? 14 : data.weapon === 'shotgun' ? 12 : 7;
+        const rx = -Math.cos(data.angle) * recoilKick;
+        const ry = -Math.sin(data.angle) * recoilKick;
+        shooter.weaponSprite.setPosition(8 + rx, 4 + ry);
+        this.tweens.add({
+          targets: shooter.weaponSprite,
+          x: 8,
+          y: 4,
+          duration: 85,
+          ease: 'Quad.easeOut'
+        });
+      }
+
+      // 2. Muzzle Flash Starburst
+      const muzzleDist = data.weapon === 'sniper_rifle' ? 44 : 32;
+      const muzzleX = data.x + Math.cos(data.angle) * muzzleDist;
+      const muzzleY = data.y + Math.sin(data.angle) * muzzleDist;
+
+      const flash = this.add.sprite(muzzleX, muzzleY, 'muzzle_flash');
+      flash.setDepth(26);
       flash.setRotation(data.angle);
       this.tweens.add({
         targets: flash,
         alpha: 0,
-        scale: 1.4,
-        duration: 80,
+        scale: 1.5,
+        duration: 75,
         onComplete: () => flash.destroy()
       });
+
+      // 3. Dynamic Muzzle Light Glow (Illuminates soldier and surroundings!)
+      const light = this.add.sprite(muzzleX, muzzleY, 'muzzle_light');
+      light.setDepth(24);
+      light.setScale(1.5);
+      light.setBlendMode(Phaser.BlendModes.ADD);
+      this.tweens.add({
+        targets: light,
+        alpha: 0,
+        scale: 2.2,
+        duration: 90,
+        ease: 'Quad.easeOut',
+        onComplete: () => light.destroy()
+      });
+
+      // 4. Barrel Smoke Puff
+      const smoke = this.add.sprite(muzzleX, muzzleY, 'smoke_puff');
+      smoke.setDepth(23);
+      smoke.setAlpha(0.65);
+      this.tweens.add({
+        targets: smoke,
+        x: muzzleX + Math.cos(data.angle) * 25,
+        y: muzzleY + Math.sin(data.angle) * 25 - 12,
+        scale: 2.0,
+        alpha: 0,
+        duration: 380,
+        ease: 'Cubic.easeOut',
+        onComplete: () => smoke.destroy()
+      });
+
+      // 5. Spent Brass Shell Casing Ejection
+      const casing = this.add.sprite(data.x, data.y, 'casing_brass');
+      casing.setDepth(22);
+      const ejectAngle = data.angle + Math.PI * (Math.random() * 0.4 + 0.6);
+      const ejectDist = 70 + Math.random() * 40;
+      this.tweens.add({
+        targets: casing,
+        x: data.x + Math.cos(ejectAngle) * ejectDist,
+        y: data.y + Math.sin(ejectAngle) * ejectDist + 28,
+        angle: Math.random() * 720 - 360,
+        duration: 450,
+        ease: 'Quad.easeOut',
+        onComplete: () => {
+          this.tweens.add({
+            targets: casing,
+            alpha: 0,
+            duration: 600,
+            onComplete: () => casing.destroy()
+          });
+        }
+      });
+
+      // 6. Camera Recoil Kick for Local Player
+      if (data.playerId === this.localSessionId) {
+        const shakeIntensity = data.weapon === 'sniper_rifle' ? 0.007 : data.weapon === 'grenade_launcher' ? 0.008 : data.weapon === 'shotgun' ? 0.005 : 0.002;
+        this.cameras.main.shake(90, shakeIntensity);
+      }
     });
 
     this.room.onMessage('player_hit', (data: any) => {
@@ -315,7 +483,7 @@ export class GameScene extends Phaser.Scene {
 
     this.room.onMessage('bullet_exploded', (data: any) => {
       sound.playExplosion();
-      this.cameras.main.shake(200, 0.008);
+      this.cameras.main.shake(220, 0.009);
 
       const shockwave = this.add.sprite(data.x, data.y, 'explosion_shockwave');
       shockwave.setDepth(26);
@@ -372,6 +540,11 @@ export class GameScene extends Phaser.Scene {
     const container = this.add.container(player.x, player.y);
     container.setDepth(15);
 
+    // Jetpack Thruster Flame (positioned under boots)
+    const thrusterSprite = this.add.sprite(0, 26, 'thruster_flame');
+    thrusterSprite.setOrigin(0.5, 0);
+    thrusterSprite.setVisible(false);
+
     // Body Sprite
     const bodySprite = this.add.sprite(0, 0, `soldier_${player.character || 'ranger'}`);
     bodySprite.setOrigin(0.5, 0.5);
@@ -395,18 +568,22 @@ export class GameScene extends Phaser.Scene {
     const healthBarFill = this.add.rectangle(-18, -25, 36, 5, isLocal ? 0x22c55e : 0xef4444);
     healthBarFill.setOrigin(0, 0.5);
 
-    container.add([bodySprite, weaponSprite, nameText, healthBarBg, healthBarFill]);
+    container.add([thrusterSprite, bodySprite, weaponSprite, nameText, healthBarBg, healthBarFill]);
 
     const visual: PlayerVisual = {
       container,
       bodySprite,
       weaponSprite,
+      thrusterSprite,
       nameText,
       healthBarBg,
       healthBarFill,
       targetX: player.x,
       targetY: player.y,
-      targetAngle: player.aimAngle || 0
+      targetAngle: player.aimAngle || 0,
+      walkCycle: 0,
+      lastDustTime: 0,
+      lastSmokeTime: 0
     };
 
     if (isLocal) {
@@ -423,11 +600,11 @@ export class GameScene extends Phaser.Scene {
     // 1. Process and Send Local Player Input
     this.handleLocalInput(time);
 
-    // 2. Interpolate and Update Local Visuals
-    this.updateLocalVisual();
+    // 2. Animate and Update Local Player Visuals (Walking, Jetpack, Aim)
+    this.updateLocalVisual(time, delta);
 
-    // 3. Interpolate and Update Remote Players
-    this.updateRemotePlayers(delta);
+    // 3. Interpolate and Animate Remote Players
+    this.updateRemotePlayers(time, delta);
 
     // 4. Update Active Bullets Positions
     this.updateBullets();
@@ -439,7 +616,7 @@ export class GameScene extends Phaser.Scene {
   private handleLocalInput(time: number): void {
     if (!this.room || !this.localPlayerVisual) return;
 
-    // Desktop Key checks
+    // Desktop Key checks: A/D/Left/Right, W/Up/Space, S/Down
     let left = this.cursors?.left.isDown || this.keyA?.isDown;
     let right = this.cursors?.right.isDown || this.keyD?.isDown;
     let jump = this.cursors?.up.isDown || this.cursors?.space.isDown || this.keyW?.isDown;
@@ -450,10 +627,6 @@ export class GameScene extends Phaser.Scene {
       right = right || this.touchControls.state.right;
       jump = jump || this.touchControls.state.jump;
 
-      if (this.touchControls.state.isShooting) {
-        this.room.send(NETWORK_EVENTS.PLAYER_FIRE, { aimAngle: this.touchControls.state.aimAngle });
-      }
-
       if (this.touchControls.state.wantsReload) {
         this.touchControls.state.wantsReload = false;
         this.room.send(NETWORK_EVENTS.PLAYER_RELOAD, {});
@@ -462,13 +635,19 @@ export class GameScene extends Phaser.Scene {
 
       if (this.touchControls.state.wantsSwitchWeapon) {
         this.touchControls.state.wantsSwitchWeapon = false;
-        this.cycleWeapon();
+        this.cycleWeapon(1);
       }
+    }
+
+    // Auto-fire while holding mouse button (Left OR Right click) or touch fire
+    const isShooting = this.isPointerShooting || this.touchControls?.state.isShooting;
+    if (isShooting) {
+      this.tryFireWeapon(time);
     }
 
     // Aim Angle calculation
     let aimAngle = 0;
-    if (this.touchControls && this.touchControls.state.aimAngle !== 0) {
+    if (this.touchControls && this.touchControls.state.isShooting && this.touchControls.state.aimAngle !== 0) {
       aimAngle = this.touchControls.state.aimAngle;
     } else {
       const worldPoint = this.cameras.main.getWorldPoint(this.input.x, this.input.y);
@@ -496,52 +675,77 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private updateLocalVisual(): void {
+  private updateLocalVisual(time: number, delta: number): void {
     if (!this.room || !this.localPlayerVisual) return;
     const serverState = this.room.state.players.get(this.localSessionId);
     if (!serverState) return;
 
+    const vis = this.localPlayerVisual;
+
     // Smoothly reconcile local position towards authoritative server position
-    this.localPlayerVisual.container.x = Phaser.Math.Linear(
-      this.localPlayerVisual.container.x,
-      serverState.x,
-      0.35
-    );
-    this.localPlayerVisual.container.y = Phaser.Math.Linear(
-      this.localPlayerVisual.container.y,
-      serverState.y,
-      0.35
-    );
+    vis.container.x = Phaser.Math.Linear(vis.container.x, serverState.x, 0.35);
+    vis.container.y = Phaser.Math.Linear(vis.container.y, serverState.y, 0.35);
 
     // Aim rotation
     const worldPoint = this.cameras.main.getWorldPoint(this.input.x, this.input.y);
-    const angle = this.touchControls?.state.aimAngle || Math.atan2(
-      worldPoint.y - this.localPlayerVisual.container.y,
-      worldPoint.x - this.localPlayerVisual.container.x
-    );
+    const angle = this.touchControls?.state.isShooting && this.touchControls?.state.aimAngle !== 0
+      ? this.touchControls.state.aimAngle
+      : Math.atan2(
+          worldPoint.y - vis.container.y,
+          worldPoint.x - vis.container.x
+        );
 
-    this.localPlayerVisual.weaponSprite.setRotation(angle);
+    vis.weaponSprite.setRotation(angle);
 
     // Flip sprite when aiming backwards
     const isAimingLeft = Math.abs(angle) > Math.PI / 2;
-    this.localPlayerVisual.bodySprite.setFlipX(isAimingLeft);
-    this.localPlayerVisual.weaponSprite.setFlipY(isAimingLeft);
+    vis.bodySprite.setFlipX(isAimingLeft);
+    vis.weaponSprite.setFlipY(isAimingLeft);
+
+    // Walking & Running Animation Cycle
+    if (serverState.isMoving && !serverState.isDead) {
+      vis.walkCycle += delta * 0.016;
+      vis.bodySprite.y = Math.sin(vis.walkCycle) * 3;
+      vis.bodySprite.setAngle((isAimingLeft ? -6 : 6) * Math.cos(vis.walkCycle));
+
+      // Emit footstep dust when running on ground
+      if (!serverState.isJumping && time - vis.lastDustTime > 160) {
+        vis.lastDustTime = time;
+        this.dustParticles.emitParticleAt(vis.container.x, vis.container.y + 26, 1);
+      }
+    } else {
+      // Idle breathing bob
+      vis.bodySprite.y = Math.sin(time * 0.003) * 1.5;
+      vis.bodySprite.setAngle(0);
+    }
+
+    // Jetpack Thruster Flame & Smoke Animation
+    if (serverState.isJumping && !serverState.isDead) {
+      vis.thrusterSprite.setVisible(true);
+      vis.thrusterSprite.setScale(1 + Math.random() * 0.25, 1 + Math.random() * 0.35);
+      if (time - vis.lastSmokeTime > 120) {
+        vis.lastSmokeTime = time;
+        this.smokeParticles.emitParticleAt(vis.container.x, vis.container.y + 28, 1);
+      }
+    } else {
+      vis.thrusterSprite.setVisible(false);
+    }
 
     // Update weapon texture if changed
     const expectedTex = `weapon_${serverState.currentWeapon}`;
-    if (this.localPlayerVisual.weaponSprite.texture.key !== expectedTex) {
-      this.localPlayerVisual.weaponSprite.setTexture(expectedTex);
+    if (vis.weaponSprite.texture.key !== expectedTex) {
+      vis.weaponSprite.setTexture(expectedTex);
     }
 
     // Update health bar over head
     const healthRatio = Math.max(0, serverState.health / serverState.maxHealth);
-    this.localPlayerVisual.healthBarFill.setScale(healthRatio, 1);
+    vis.healthBarFill.setScale(healthRatio, 1);
 
     // Fade when dead
-    this.localPlayerVisual.container.setAlpha(serverState.isDead ? 0.3 : 1);
+    vis.container.setAlpha(serverState.isDead ? 0.3 : 1);
   }
 
-  private updateRemotePlayers(delta: number): void {
+  private updateRemotePlayers(time: number, delta: number): void {
     if (!this.room) return;
 
     this.room.state.players.forEach((player: any, sessionId: string) => {
@@ -559,6 +763,24 @@ export class GameScene extends Phaser.Scene {
       const isAimingLeft = Math.abs(player.aimAngle || 0) > Math.PI / 2;
       visual.bodySprite.setFlipX(isAimingLeft);
       visual.weaponSprite.setFlipY(isAimingLeft);
+
+      // Remote walking animation
+      if (player.isMoving && !player.isDead) {
+        visual.walkCycle += delta * 0.016;
+        visual.bodySprite.y = Math.sin(visual.walkCycle) * 3;
+        visual.bodySprite.setAngle((isAimingLeft ? -6 : 6) * Math.cos(visual.walkCycle));
+      } else {
+        visual.bodySprite.y = Math.sin(time * 0.003) * 1.5;
+        visual.bodySprite.setAngle(0);
+      }
+
+      // Remote jetpack thruster
+      if (player.isJumping && !player.isDead) {
+        visual.thrusterSprite.setVisible(true);
+        visual.thrusterSprite.setScale(1 + Math.random() * 0.25, 1 + Math.random() * 0.35);
+      } else {
+        visual.thrusterSprite.setVisible(false);
+      }
 
       // Weapon texture
       const expectedTex = `weapon_${player.currentWeapon}`;
