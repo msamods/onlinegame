@@ -186,9 +186,9 @@ export const FOREST_ISLAND_MAP = {
     { x: 600, y: 850, team: 'red' },
     { x: 1200, y: 650, team: 'neutral' },
     { x: 1600, y: 550, team: 'neutral' },
-    { x: 2100, y: 850, team: 'blue' },
+    { x: 2280, y: 950, team: 'blue' },
     { x: 2850, y: 1000, team: 'blue' },
-    { x: 1400, y: 1200, team: 'neutral' }
+    { x: 1400, y: 1180, team: 'neutral' }
   ] as SpawnPoint[],
   // Solid collision obstacles
   obstacles: [
@@ -206,7 +206,7 @@ export const FOREST_ISLAND_MAP = {
     { x: 50, y: 540, width: 200, height: 20, type: 'building' }, // tower top
 
     // Central Bunker / Hill Fortress
-    { x: 950, y: 1050, width: 1300, height: 230, type: 'tunnel' }, // tunnel ground
+    { x: 950, y: 1050, width: 1300, height: 30, type: 'ground' }, // tunnel ceiling / hill bedrock
     { x: 1050, y: 750, width: 1100, height: 50, type: 'ground' }, // bunker roof / central hill ground
     { x: 1050, y: 800, width: 60, height: 250, type: 'building' }, // bunker left wall
     { x: 2090, y: 800, width: 60, height: 250, type: 'building' }, // bunker right wall

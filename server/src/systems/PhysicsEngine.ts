@@ -20,6 +20,23 @@ export class PhysicsEngine {
   ): void {
     if (player.isDead) return;
 
+    const playerHalfW = PLAYER_WIDTH / 2;
+    const playerHalfH = PLAYER_HEIGHT / 2;
+
+    // Anti-stuck resolution: If player spawned or got clipped inside an obstacle, pop them safely on top
+    const stuckBox = {
+      x: player.x - playerHalfW + 2,
+      y: player.y - playerHalfH + 2,
+      width: PLAYER_WIDTH - 4,
+      height: PLAYER_HEIGHT - 4
+    };
+    for (const obs of this.obstacles) {
+      if (this.checkAABB(stuckBox, obs)) {
+        player.y = obs.y - playerHalfH - 2;
+        player.vy = 0;
+      }
+    }
+
     // Horizontal Movement
     let targetVx = 0;
     if (input.left) {
@@ -58,8 +75,6 @@ export class PhysicsEngine {
 
     // Attempt Horizontal Movement with Collision
     const newX = player.x + player.vx * dt;
-    const playerHalfW = PLAYER_WIDTH / 2;
-    const playerHalfH = PLAYER_HEIGHT / 2;
 
     // Inset top and bottom of horizontal box by 4px so standing on ground or near ceiling doesn't block walking!
     const horizontalBox = {
