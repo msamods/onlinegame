@@ -334,9 +334,20 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  private safeSend(type: string, message: any): void {
+    if (!this.room) return;
+    try {
+      const ws = (this.room as any).connection?.transport?.ws;
+      if (ws && ws.readyState !== WebSocket.OPEN) return;
+      this.room.send(type, message);
+    } catch {
+      // Ignored if disconnecting
+    }
+  }
+
   private handleReload(): void {
     if (this.room) {
-      this.room.send(NETWORK_EVENTS.PLAYER_RELOAD, {});
+      this.safeSend(NETWORK_EVENTS.PLAYER_RELOAD, {});
       sound.playReload();
     }
   }
@@ -363,14 +374,14 @@ export class GameScene extends Phaser.Scene {
           worldPoint.x - this.localPlayerVisual.container.x
         );
 
-    this.room.send(NETWORK_EVENTS.PLAYER_FIRE, { aimAngle: angle });
+    this.safeSend(NETWORK_EVENTS.PLAYER_FIRE, { aimAngle: angle });
   }
 
   private selectWeapon(weapon: WeaponType): void {
     if (!this.room) return;
     const localState = this.room.state.players.get(this.localSessionId);
     if (localState && localState.currentWeapon !== weapon) {
-      this.room.send(NETWORK_EVENTS.PLAYER_SWITCH_WEAPON, { weapon });
+      this.safeSend(NETWORK_EVENTS.PLAYER_SWITCH_WEAPON, { weapon });
       sound.playReload();
     }
   }
@@ -392,15 +403,21 @@ export class GameScene extends Phaser.Scene {
     const nextIdx = (currentIdx + direction + weapons.length) % weapons.length;
     const nextWeapon = weapons[nextIdx];
 
-    this.room.send(NETWORK_EVENTS.PLAYER_SWITCH_WEAPON, { weapon: nextWeapon });
+    this.safeSend(NETWORK_EVENTS.PLAYER_SWITCH_WEAPON, { weapon: nextWeapon });
     sound.playReload();
   }
 
   private setupRoomEvents(): void {
     if (!this.room) return;
 
-    // Synchronize Players
+    // Synchronize Players: Process existing players already in state + dynamically added players
+    this.room.state.players.forEach((player: any, sessionId: string) => {
+      this.createPlayerVisual(player, sessionId);
+    });
+
     this.room.state.players.onAdd((player: any, sessionId: string) => {
+      if (sessionId === this.localSessionId && this.localPlayerVisual) return;
+      if (this.remotePlayers.has(sessionId)) return;
       this.createPlayerVisual(player, sessionId);
     });
 
@@ -413,6 +430,16 @@ export class GameScene extends Phaser.Scene {
     });
 
     // Synchronize Bullets
+    this.room.state.bullets.forEach((bullet: any, id: string) => {
+      if (!this.bulletSprites.has(id)) {
+        const texture = bullet.isExplosive ? 'grenade_shell' : 'bullet_tracer';
+        const sprite = this.add.sprite(bullet.x, bullet.y, texture);
+        sprite.setDepth(20);
+        sprite.setRotation(Math.atan2(bullet.vy, bullet.vx));
+        this.bulletSprites.set(id, sprite);
+      }
+    });
+
     this.room.state.bullets.onAdd((bullet: any, id: string) => {
       const texture = bullet.isExplosive ? 'grenade_shell' : 'bullet_tracer';
       const sprite = this.add.sprite(bullet.x, bullet.y, texture);
@@ -427,6 +454,24 @@ export class GameScene extends Phaser.Scene {
         sprite.destroy();
         this.bulletSprites.delete(id);
       }
+    });
+
+    // Handle pong responses from server to calculate round-trip latency
+    this.room.onMessage(NETWORK_EVENTS.PONG, (data: any) => {
+      const sentTime = Number(data?.timestamp || 0);
+      if (sentTime > 0) {
+        const ping = Math.max(1, Date.now() - sentTime);
+        const hud = this.scene.get('HUDScene') as HUDScene;
+        if (hud) {
+          const localState = this.room?.state?.players.get(this.localSessionId);
+          hud.updateStats(localState?.kills || 0, localState?.deaths || 0, ping);
+        }
+      }
+    });
+
+    // Handle disconnect gracefully
+    this.room.onLeave((code) => {
+      console.warn(`[GameScene] Disconnected from room with status: ${code}`);
     });
 
     // Broadcast Handlers: Realistic Gun recoil, dynamic light halo, muzzle smoke & brass shell ejection!
@@ -752,7 +797,7 @@ export class GameScene extends Phaser.Scene {
     // Send input packet at ~30 Hz
     if (time - this.lastInputSend >= 33) {
       this.lastInputSend = time;
-      this.room.send(NETWORK_EVENTS.PLAYER_INPUT, {
+      this.safeSend(NETWORK_EVENTS.PLAYER_INPUT, {
         left: !!left,
         right: !!right,
         jump: !!jump,
@@ -763,7 +808,7 @@ export class GameScene extends Phaser.Scene {
     // Ping server periodically
     if (time - this.lastPingTime >= 2000) {
       this.lastPingTime = time;
-      this.room.send(NETWORK_EVENTS.PING, { timestamp: Date.now() });
+      this.safeSend(NETWORK_EVENTS.PING, { timestamp: Date.now() });
     }
   }
 

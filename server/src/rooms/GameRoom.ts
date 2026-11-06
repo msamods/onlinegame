@@ -121,11 +121,16 @@ export class GameRoom extends Room<GameState> {
       }
     });
 
-    this.onMessage(NETWORK_EVENTS.PING, (client, data: { timestamp: number }) => {
-      client.send(NETWORK_EVENTS.PONG, { timestamp: data?.timestamp });
-      const player = this.state.players.get(client.sessionId);
-      if (player && data?.timestamp) {
-        player.ping = Math.max(0, Date.now() - data.timestamp);
+    this.onMessage(NETWORK_EVENTS.PING, (client, data: { timestamp: number | bigint }) => {
+      try {
+        const clientTimestamp = Number(data?.timestamp ?? Date.now());
+        client.send(NETWORK_EVENTS.PONG, { timestamp: clientTimestamp });
+        const player = this.state.players.get(client.sessionId);
+        if (player && clientTimestamp > 0) {
+          player.ping = Math.max(0, Date.now() - clientTimestamp);
+        }
+      } catch (err) {
+        console.warn(`[GameRoom ${this.roomId}] Ping error handled:`, err);
       }
     });
 
