@@ -21,6 +21,7 @@
     "test:multiplayer": "node test_multiplayer.mjs"
   },
   "devDependencies": {
-    "concurrently": "^9.1.2"
+    "concurrently": "^9.1.2",
+    "playwright": "^1.65.0"
   }
 }
