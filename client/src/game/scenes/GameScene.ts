@@ -58,6 +58,12 @@ export class GameScene extends Phaser.Scene {
   private key4!: Phaser.Input.Keyboard.Key;
   private key5!: Phaser.Input.Keyboard.Key;
 
+  // Direct Native Keyboard State (immune to browser focus & layout issues)
+  private activeKeys = new Set<string>();
+  private boundKeyDownHandler?: (e: KeyboardEvent) => void;
+  private boundKeyUpHandler?: (e: KeyboardEvent) => void;
+  private boundBlurHandler?: () => void;
+
   // Mouse & Shooting state
   private isPointerShooting: boolean = false;
   private lastShotTime: number = 0;
@@ -217,27 +223,104 @@ export class GameScene extends Phaser.Scene {
   }
 
   private setupInputs(): void {
-    if (!this.input.keyboard) return;
+    // 1. Ensure canvas is focusable and focused
+    window.focus();
+    if (this.game.canvas) {
+      this.game.canvas.setAttribute('tabindex', '0');
+      this.game.canvas.style.outline = 'none';
+      this.game.canvas.focus();
+    }
 
-    this.cursors = this.input.keyboard.createCursorKeys();
-    this.keyA = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A);
-    this.keyD = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D);
-    this.keyW = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W);
-    this.keyS = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S);
-    this.keyR = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
-    this.keyQ = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.Q);
-    this.keyE = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E);
+    // 2. Setup Phaser's internal keyboard plugin if available
+    if (this.input.keyboard) {
+      this.cursors = this.input.keyboard.createCursorKeys();
+      this.keyA = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A);
+      this.keyD = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D);
+      this.keyW = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W);
+      this.keyS = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S);
+      this.keyR = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
+      this.keyQ = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.Q);
+      this.keyE = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E);
 
-    // Number keys 1-5 for direct weapon selection
-    this.key1 = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ONE);
-    this.key2 = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.TWO);
-    this.key3 = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.THREE);
-    this.key4 = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.FOUR);
-    this.key5 = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.FIVE);
+      this.key1 = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ONE);
+      this.key2 = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.TWO);
+      this.key3 = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.THREE);
+      this.key4 = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.FOUR);
+      this.key5 = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.FIVE);
 
-    // Mouse Listeners: Both Left Click AND Right Click trigger shooting!
+      this.keyR.on('down', () => this.handleReload());
+      this.keyQ.on('down', () => this.cycleWeapon(-1));
+      this.keyE.on('down', () => this.cycleWeapon(1));
+      this.key1.on('down', () => this.selectWeapon(WeaponType.PISTOL));
+      this.key2.on('down', () => this.selectWeapon(WeaponType.ASSAULT_RIFLE));
+      this.key3.on('down', () => this.selectWeapon(WeaponType.SHOTGUN));
+      this.key4.on('down', () => this.selectWeapon(WeaponType.SNIPER_RIFLE));
+      this.key5.on('down', () => this.selectWeapon(WeaponType.GRENADE_LAUNCHER));
+    }
+
+    // 3. Direct Native Window Keyboard Listeners (100% immune to Phaser focus quirks)
+    this.boundKeyDownHandler = (e: KeyboardEvent) => {
+      // Don't hijack keys when user is intentionally typing inside an input element
+      const activeEl = document.activeElement;
+      if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
+        return;
+      }
+
+      this.activeKeys.add(e.code);
+      this.activeKeys.add(e.key.toLowerCase());
+
+      // Direct hotkey responses
+      if (e.code === 'KeyR' || e.key.toLowerCase() === 'r') {
+        this.handleReload();
+      } else if (e.code === 'KeyQ' || e.key.toLowerCase() === 'q') {
+        this.cycleWeapon(-1);
+      } else if (e.code === 'KeyE' || e.key.toLowerCase() === 'e') {
+        this.cycleWeapon(1);
+      } else if (e.code === 'Digit1' || e.key === '1' || e.code === 'Numpad1') {
+        this.selectWeapon(WeaponType.PISTOL);
+      } else if (e.code === 'Digit2' || e.key === '2' || e.code === 'Numpad2') {
+        this.selectWeapon(WeaponType.ASSAULT_RIFLE);
+      } else if (e.code === 'Digit3' || e.key === '3' || e.code === 'Numpad3') {
+        this.selectWeapon(WeaponType.SHOTGUN);
+      } else if (e.code === 'Digit4' || e.key === '4' || e.code === 'Numpad4') {
+        this.selectWeapon(WeaponType.SNIPER_RIFLE);
+      } else if (e.code === 'Digit5' || e.key === '5' || e.code === 'Numpad5') {
+        this.selectWeapon(WeaponType.GRENADE_LAUNCHER);
+      }
+    };
+
+    this.boundKeyUpHandler = (e: KeyboardEvent) => {
+      this.activeKeys.delete(e.code);
+      this.activeKeys.delete(e.key.toLowerCase());
+    };
+
+    this.boundBlurHandler = () => {
+      this.activeKeys.clear();
+    };
+
+    window.addEventListener('keydown', this.boundKeyDownHandler);
+    window.addEventListener('keyup', this.boundKeyUpHandler);
+    window.addEventListener('blur', this.boundBlurHandler);
+
+    this.events.once('shutdown', () => {
+      if (this.boundKeyDownHandler) window.removeEventListener('keydown', this.boundKeyDownHandler);
+      if (this.boundKeyUpHandler) window.removeEventListener('keyup', this.boundKeyUpHandler);
+      if (this.boundBlurHandler) window.removeEventListener('blur', this.boundBlurHandler);
+    });
+
+    // 4. Mouse Listeners: Both Left Click AND Right Click trigger shooting + regain focus!
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      if (pointer.leftButtonDown() || pointer.rightButtonDown()) {
+      window.focus();
+      if (this.game.canvas) {
+        this.game.canvas.focus();
+      }
+      // If any form field other than chat is focused, blur it to return keyboard control to game
+      const activeEl = document.activeElement as HTMLElement | null;
+      if (activeEl && activeEl.id !== 'chat-input' && activeEl.blur) {
+        activeEl.blur();
+      }
+
+      if (pointer.leftButtonDown() || pointer.rightButtonDown() || pointer.isDown) {
         this.isPointerShooting = true;
         this.tryFireWeapon(this.time.now);
       }
@@ -245,35 +328,17 @@ export class GameScene extends Phaser.Scene {
 
     this.input.on('pointerup', () => {
       const p = this.input.activePointer;
-      if (!p.leftButtonDown() && !p.rightButtonDown()) {
+      if (!p.leftButtonDown() && !p.rightButtonDown() && !p.isDown) {
         this.isPointerShooting = false;
       }
     });
+  }
 
-    // R to reload
-    this.keyR.on('down', () => {
-      if (this.room) {
-        this.room.send(NETWORK_EVENTS.PLAYER_RELOAD, {});
-        sound.playReload();
-      }
-    });
-
-    // Q to switch to previous weapon
-    this.keyQ.on('down', () => {
-      this.cycleWeapon(-1);
-    });
-
-    // E to switch to next weapon
-    this.keyE.on('down', () => {
-      this.cycleWeapon(1);
-    });
-
-    // Direct number weapon select keys
-    this.key1.on('down', () => this.selectWeapon(WeaponType.PISTOL));
-    this.key2.on('down', () => this.selectWeapon(WeaponType.ASSAULT_RIFLE));
-    this.key3.on('down', () => this.selectWeapon(WeaponType.SHOTGUN));
-    this.key4.on('down', () => this.selectWeapon(WeaponType.SNIPER_RIFLE));
-    this.key5.on('down', () => this.selectWeapon(WeaponType.GRENADE_LAUNCHER));
+  private handleReload(): void {
+    if (this.room) {
+      this.room.send(NETWORK_EVENTS.PLAYER_RELOAD, {});
+      sound.playReload();
+    }
   }
 
   private tryFireWeapon(time: number): void {
@@ -616,10 +681,37 @@ export class GameScene extends Phaser.Scene {
   private handleLocalInput(time: number): void {
     if (!this.room || !this.localPlayerVisual) return;
 
-    // Desktop Key checks: A/D/Left/Right, W/Up/Space, S/Down
-    let left = this.cursors?.left.isDown || this.keyA?.isDown;
-    let right = this.cursors?.right.isDown || this.keyD?.isDown;
-    let jump = this.cursors?.up.isDown || this.cursors?.space.isDown || this.keyW?.isDown;
+    // Check if player is actively typing inside chat or an input field
+    const activeEl = document.activeElement;
+    const isTypingInField = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA');
+
+    // Desktop Key checks: supports standard QWERTY, AZERTY, CapsLock, Arrow keys, and Spacebar
+    let left = false;
+    let right = false;
+    let jump = false;
+
+    if (!isTypingInField) {
+      left = this.activeKeys.has('KeyA') ||
+             this.activeKeys.has('a') ||
+             this.activeKeys.has('ArrowLeft') ||
+             (this.cursors?.left?.isDown ?? false) ||
+             (this.keyA?.isDown ?? false);
+
+      right = this.activeKeys.has('KeyD') ||
+              this.activeKeys.has('d') ||
+              this.activeKeys.has('ArrowRight') ||
+              (this.cursors?.right?.isDown ?? false) ||
+              (this.keyD?.isDown ?? false);
+
+      jump = this.activeKeys.has('KeyW') ||
+             this.activeKeys.has('w') ||
+             this.activeKeys.has('ArrowUp') ||
+             this.activeKeys.has('Space') ||
+             this.activeKeys.has(' ') ||
+             (this.cursors?.up?.isDown ?? false) ||
+             (this.cursors?.space?.isDown ?? false) ||
+             (this.keyW?.isDown ?? false);
+    }
 
     // Mobile Touch checks
     if (this.touchControls) {

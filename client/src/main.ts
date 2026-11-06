@@ -257,16 +257,38 @@ class GameManager {
         chatInput.value = '';
       }
       chatInput.blur();
+      window.focus();
     });
 
-    // Global Enter key to focus chat
+    // Enter to open/submit chat, Escape to exit chat immediately back to game
     window.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && socket.activeRoom) {
-        if (document.activeElement !== chatInput) {
+      if (!socket.activeRoom) return;
+
+      if (e.key === 'Enter') {
+        if (document.activeElement === chatInput) {
+          // If empty, pressing Enter immediately closes chat and resumes walking
+          if (!chatInput.value.trim()) {
+            e.preventDefault();
+            chatInput.blur();
+            window.focus();
+          }
+        } else {
           e.preventDefault();
           chatInput.focus();
         }
+      } else if (e.key === 'Escape' && document.activeElement === chatInput) {
+        e.preventDefault();
+        chatInput.blur();
+        window.focus();
       }
+    });
+
+    // Clicking anywhere on the game container or window restores game keyboard control
+    document.getElementById('game-container')?.addEventListener('pointerdown', () => {
+      if (document.activeElement === chatInput) {
+        chatInput.blur();
+      }
+      window.focus();
     });
   }
 
@@ -433,6 +455,12 @@ class GameManager {
   }
 
   private startGameSession(room: any): void {
+    // Unfocus any HTML inputs or modal buttons so keyboard controls immediately control soldier!
+    if (document.activeElement && (document.activeElement as HTMLElement).blur) {
+      (document.activeElement as HTMLElement).blur();
+    }
+    window.focus();
+
     // Attach chat listener
     const chatLog = document.getElementById('chat-log')!;
     chatLog.innerHTML = '';
@@ -456,6 +484,17 @@ class GameManager {
           mode: Phaser.Scale.RESIZE,
           autoCenter: Phaser.Scale.CENTER_BOTH
         },
+        input: {
+          keyboard: {
+            target: window
+          },
+          mouse: {
+            target: window
+          },
+          touch: {
+            target: window
+          }
+        },
         scene: [BootScene, GameScene, HUDScene],
         physics: {
           default: 'arcade',
@@ -478,6 +517,16 @@ class GameManager {
         gameScene.scene.restart();
       }
     }
+
+    // Regain focus on canvas
+    setTimeout(() => {
+      window.focus();
+      const canvas = document.querySelector('#game-container canvas') as HTMLCanvasElement;
+      if (canvas) {
+        canvas.setAttribute('tabindex', '0');
+        canvas.focus();
+      }
+    }, 150);
   }
 
   private showModal(id: string): void {

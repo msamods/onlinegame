@@ -36,10 +36,24 @@ export class PhysicsEngine {
 
     player.vx = targetVx;
 
-    // Vertical Movement (Gravity & Jump)
-    player.vy += GRAVITY * dt;
-    if (player.vy > MAX_FALL_SPEED) {
-      player.vy = MAX_FALL_SPEED;
+    // Vertical Movement (Gravity & Mini-Militia Jetpack Thrust)
+    if (input.jump) {
+      if (!player.isJumping) {
+        // Initial impulse from ground
+        player.vy = JUMP_VELOCITY;
+        player.isJumping = true;
+      } else {
+        // Continuous upward jetpack boost while holding jump
+        player.vy -= 1600 * dt;
+        if (player.vy < JUMP_VELOCITY) {
+          player.vy = JUMP_VELOCITY;
+        }
+      }
+    } else {
+      player.vy += GRAVITY * dt;
+      if (player.vy > MAX_FALL_SPEED) {
+        player.vy = MAX_FALL_SPEED;
+      }
     }
 
     // Attempt Horizontal Movement with Collision
@@ -47,11 +61,12 @@ export class PhysicsEngine {
     const playerHalfW = PLAYER_WIDTH / 2;
     const playerHalfH = PLAYER_HEIGHT / 2;
 
+    // Inset top and bottom of horizontal box by 4px so standing on ground or near ceiling doesn't block walking!
     const horizontalBox = {
       x: newX - playerHalfW,
-      y: player.y - playerHalfH,
+      y: player.y - playerHalfH + 4,
       width: PLAYER_WIDTH,
-      height: PLAYER_HEIGHT
+      height: PLAYER_HEIGHT - 8
     };
 
     let collidedH = false;
@@ -71,9 +86,9 @@ export class PhysicsEngine {
     // Attempt Vertical Movement with Collision
     const newY = player.y + player.vy * dt;
     const verticalBox = {
-      x: player.x - playerHalfW,
+      x: player.x - playerHalfW + 2,
       y: newY - playerHalfH,
-      width: PLAYER_WIDTH,
+      width: PLAYER_WIDTH - 4,
       height: PLAYER_HEIGHT
     };
 
@@ -85,12 +100,12 @@ export class PhysicsEngine {
         collidedV = true;
         // Moving downwards onto a platform/ground
         if (player.vy > 0 && player.y <= obs.y) {
-          player.y = obs.y - playerHalfH;
+          player.y = obs.y - playerHalfH - 0.05;
           player.vy = 0;
           onGround = true;
         } else if (player.vy < 0) {
           // Bumping head from below
-          player.y = obs.y + obs.height + playerHalfH;
+          player.y = obs.y + obs.height + playerHalfH + 0.05;
           player.vy = 0;
         }
         break;
@@ -102,11 +117,6 @@ export class PhysicsEngine {
       player.isJumping = true;
     } else if (onGround) {
       player.isJumping = false;
-      // Allow jump if on ground and jump requested
-      if (input.jump) {
-        player.vy = JUMP_VELOCITY;
-        player.isJumping = true;
-      }
     }
 
     // World bounds clamping
